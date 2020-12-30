@@ -96,7 +96,7 @@
 
 
 
-main = function(
+mainKNN = function(
     matrix[double] Train,
     matrix[double] Test,
     matrix[double] CLType = " ",
@@ -105,14 +105,18 @@ main = function(
     String PRPath = " ",
     int trans_continuous = 0,
     int predict_con_tg = 0,
-    k_value = 5,
+    int k_value = 5,
     String FMT = "csv",
     int select_k = 0,
     int k_min = 1,
     int k_max = 100,
     int select_feature = 0,
     int feature_max = 10,
+    int interval = 1000,
     int feature_importance = 0,
+    int predict_con_tg = 0,
+    String START_SELECTED = " ",
+    String FEATURE_SELECTED = " ",
     String FEATURE_IMPORTANCE_VALUE = " "
 )return(
     matrix[double] NNR_matrix,
