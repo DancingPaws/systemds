@@ -64,185 +64,213 @@
 #                       T=%datapath%/test.csv NNR=%tmpdir%/NNR.csv fmt=csv
 
 
-print( "start knn algorithm" );
+# print( "start knn algorithm" );
 #input data
-TrainPath = $X;
-TestPath = $T;
-CLPath = ifdef( $Y," " );
-CLTypePath = ifdef( $Y_T," " );
+#TrainPath = $X;
+#TestPath = $T;
+#CLPath = ifdef( $Y," " );
+#CLTypePath = ifdef( $Y_T," " );
 #output data
-NNRPath = $NNR;
-PRPath = ifdef( $PR," " );
+#NNRPath = $NNR;
+#PRPath = ifdef( $PR," " );
 #parameter
-epsilon = ifdef( $epsilon,0 );
-distance_type = ifdef( $distance_type,1 );
-trans_continuous = ifdef( $trans_continuous,0 );
-predict_con_tg = ifdef($predict_con_tg,0);
-k_value = ifdef( $k_value,5 );
-FMT = ifdef( $fmt,"text" );
+#epsilon = ifdef( $epsilon,0 );
+#distance_type = ifdef( $distance_type,1 );
+#trans_continuous = ifdef( $trans_continuous,0 );
+#predict_con_tg = ifdef($predict_con_tg,0);
+#k_value = ifdef( $k_value,5 );
+#FMT = ifdef( $fmt,"text" );
 #k select parameter
-select_k = ifdef( $select_k,0 );
-k_min = ifdef( $k_min,1 );
-k_max = ifdef( $k_max,100 );
+#select_k = ifdef( $select_k,0 );
+#k_min = ifdef( $k_min,1 );
+#k_max = ifdef( $k_max,100 );
 #feature select parameter
-select_feature = ifdef( $select_feature,0 );
-feature_max = ifdef( $feature_max,10 );
+#select_feature = ifdef( $select_feature,0 );
+#feature_max = ifdef( $feature_max,10 );
 #feature importance parameter
-feature_importance = ifdef ($feature_importance,0);
-
+#feature_importance = ifdef ($feature_importance,0);
 
 #Read train data
-Train = read ( TrainPath );
-Test = read ( TestPath );
+# Train = read ( TrainPath );
+# Test = read ( TestPath );
 
-#data prepare
-if( trans_continuous == 1 ){
-    print( "Do data prepare to transfer continuous variable to [-1,1] ..." );
-    Train = prepareKNNData( Train);
-    Test  = prepareKNNData( Test);
-}
 
-n_records = nrow( Train );
-n_features = ncol( Train );
-s_selected_k = 5;
-m_selected_feature = matrix(1,rows=1,cols=n_records);
-if( select_k == 1 | select_feature==1 ){
-    default_interval = as.integer( ceil( sqrt( n_records ) ) );
-    interval = ifdef( $interval,default_interval );
-    print( "interval is " + interval );
-    #parameter check
-    if(  CLPath == " " | CLTypePath == " "){
-        stop( "Y or Y_T must be set for k selection algorithm" );
+
+main = function(
+    matrix[double] Train,
+    matrix[double] Test,
+    matrix[double] CLType = " ",
+    matrix[double] CL = " ",
+    String NNRPath = " ",
+    String PRPath = " ",
+    int trans_continuous = 0,
+    int predict_con_tg = 0,
+    k_value = 5,
+    String FMT = "csv",
+    int select_k = 0,
+    int k_min = 1,
+    int k_max = 100,
+    int select_feature = 0,
+    int feature_max = 10,
+    int feature_importance = 0,
+    String FEATURE_IMPORTANCE_VALUE = " "
+)return(
+    matrix[double] NNR_matrix,
+    matrix[double] CL_matrix,
+    matrix[double] m_feature_importance
+){
+
+    #data prepare
+    if( trans_continuous == 1 ){
+        print( "Do data prepare to transfer continuous variable to [-1,1] ..." );
+        Train = prepareKNNData( Train);
+        Test  = prepareKNNData( Test);
     }
-    #parameter re-define
-    if( select_k==1 ){
-        if(  k_max >= n_records  ){
-            k_max = n_records - 1;
-            print( "k_max should no greater than number of record, change k_max equal " +
-            "( number of record - 1 ) : " + k_max );
+
+    n_records = nrow( Train );
+    n_features = ncol( Train );
+    s_selected_k = 5;
+    m_selected_feature = matrix(1,rows=1,cols=n_records);
+    if( select_k == 1 | select_feature==1 ){
+        default_interval = as.integer( ceil( sqrt( n_records ) ) );
+        interval = ifdef( $interval,default_interval );
+        print( "interval is " + interval );
+        #parameter check
+        if(  CL == " " | CLType == " "){
+            stop( "Y or Y_T must be set for k selection algorithm" );
         }
-        if(  k_max >= interval  ){
-            interval = k_max + 1;
-            # k_max should equal interval -1, because we drop self when search nn.
-            print( "interval should be no less than k_max, change interval equal : " + 
-            interval );
-        }
-        if(  k_max <= 1  ){
-            stop( "uncorrect k_max value"  );
-        }   
-        if(  k_min >= k_max ){
-            stop( "k_min >= k_max" );
-        }   
-    }
-    if( select_feature == 1 ){
-        if(  k_value >= n_records  ){
-            k_value = n_records - 1;
-            print( "k_value should be no greater than number of record, change k_value equal " +
-            "( number of record - 1 ) : " + k_value );
-        }
-        #Select feature only
-        StartSelectedPath = ifdef( $START_SELECTED," " );
-        SelectedPath = ifdef( $FEATURE_SELECTED," " );
-        if( StartSelectedPath == " " ){
-            m_start_selected_feature = matrix( 0,1,n_features );
-        }else{
-            m_start_selected_feature = read( StartSelectedPath );
-        }       
-    }
-    CL = read( CLPath );
-    CLType = read( CLTypePath );
-    type = as.integer( as.scalar( CLType[1,1] ) );
-    if( select_k == 1 & select_feature == 1){
-        #Combined k and feature selection
-        print("Start combined k and feature selection ...");
-        [m_selected_feature,s_selected_k] = 
-            getSelectedFeatureAndK( Train,CL,type,m_start_selected_feature,
-                feature_max,k_min,k_max,interval );
-    }else if( select_k == 1 ){
-        #Select k only
-        print("Start k select ...");
-        s_selected_k = getSelectedKBase( Train,CL,type,k_min,k_max,interval );
-    }else if( select_feature == 1 ){
-        #Select feature only
-        print("Start feature selection ... ");
-        [m_selected_feature,d_err] = 
-            getSelectedFeature( Train,CL,type,m_start_selected_feature,
-                feature_max,k_value,interval );
-    }
-}
-if( feature_importance == 1){
-    if(  k_value >= n_records  ){
-        k_value = n_records - 1;
-        print( "k_value should be no greater than number of record, make k_value equal " + 
-        "( number of record - 1 ) : " + k_value );
-    }
-    CL = read( CLPath );
-    CLType = read( CLTypePath );
-    type = as.integer( as.scalar( CLType[1,1] ) );  
-    FeatureImportanceExportPath = ifdef( $FEATURE_IMPORTANCE_VALUE," " );
-    if(FeatureImportanceExportPath != " "){
-        [m_feature_importance,m_norm_feature_importance] = 
-            getFeatureImportance(Train,CL,type,k_value);
-        #print( "feature importance is "  );
-        #tmp = matrixDisplay( m_feature_importance );
-        write ( m_feature_importance,FeatureImportanceExportPath,format=FMT );          
-    }
-}
-
-# knn search
-print("Start knn search ...")
-# apply k selection result
-if(select_k == 1){
-    k_value = s_selected_k
-}
-if(  k_value >= n_records ){
-    k_value = n_records - 1;
-    print( "k_value should be no greater than number of record, make k_value equal " + 
-        "( number of record - 1 )" );
-}
-print( "k value is " + k_value );
-# apply feature selection result
-if( select_feature == 1 ){
-    if( n_features > sum( m_selected_feature ) ){
-        Train = removeEmpty( target = Train,margin="cols",select = m_selected_feature);
-        Test = removeEmpty( target = Test,margin="cols",select = m_selected_feature );
-    }
-}
-
-NNR_matrix = naiveKNNsearch(Train,Test,k_value)
-write( NNR_matrix,NNRPath,format=FMT );
-
-# main part for knn predicted
-if( CLPath != " " ){
-    CL = read ( CLPath );
-    if(  CLTypePath == " " ){
-        stop( "Set Y but Miss Y_T for label type" );
-    }
-    CLType = read( CLTypePath );
-    i_cl_type = as.integer( as.scalar( CLType[1,1] ) );
-}
-CL_matrix = matrix( 0,nrow( Test ),1 );
-if( CLPath != " " ){
-    parfor( i in 1:nrow( NNR_matrix ) ,check=0){
-        NNR_tmp_matrix = matrix( 0,k_value,1 );
-        for( j in 1:k_value ){
-            NNR_tmp_matrix[j,1] = CL[as.scalar( NNR_matrix[i,j] ),1] ;
-        }
-        t_cl_value = 0.0 #test data label value
-        if( i_cl_type == 2 ){
-            t_cl_value = as.scalar( rowIndexMax( t( table( NNR_tmp_matrix,1 ) ) ) )
-        }else{
-            if ( predict_con_tg == 0){
-                t_cl_value = mean( NNR_tmp_matrix );
-            } else if(predict_con_tg == 1){
-                t_cl_value = median( NNR_tmp_matrix );
+        #parameter re-define
+        if( select_k==1 ){
+            if(  k_max >= n_records  ){
+                k_max = n_records - 1;
+                print( "k_max should no greater than number of record, change k_max equal " +
+                "( number of record - 1 ) : " + k_max );
+            }
+            if(  k_max >= interval  ){
+                interval = k_max + 1;
+                # k_max should equal interval -1, because we drop self when search nn.
+                print( "interval should be no less than k_max, change interval equal : " +
+                interval );
+            }
+            if(  k_max <= 1  ){
+                stop( "uncorrect k_max value"  );
+            }
+            if(  k_min >= k_max ){
+                stop( "k_min >= k_max" );
             }
         }
-        CL_matrix[i,1] = t_cl_value;
+        if( select_feature == 1 ){
+            if(  k_value >= n_records  ){
+                k_value = n_records - 1;
+                print( "k_value should be no greater than number of record, change k_value equal " +
+                "( number of record - 1 ) : " + k_value );
+            }
+            #Select feature only
+            StartSelectedPath = ifdef( $START_SELECTED," " );
+            SelectedPath = ifdef( $FEATURE_SELECTED," " );
+            if( StartSelectedPath == " " ){
+                m_start_selected_feature = matrix( 0,1,n_features );
+            }else{
+                m_start_selected_feature = StartSelectedPath;
+            }
+        }
+        # CL = read( CLPath );
+        # CLType = read( CLTypePath );
+        type = as.integer( as.scalar( CLType[1,1] ) );
+        if( select_k == 1 & select_feature == 1){
+            #Combined k and feature selection
+            print("Start combined k and feature selection ...");
+            [m_selected_feature,s_selected_k] =
+                getSelectedFeatureAndK( Train,CL,type,m_start_selected_feature,
+                    feature_max,k_min,k_max,interval );
+        }else if( select_k == 1 ){
+            #Select k only
+            print("Start k select ...");
+            s_selected_k = getSelectedKBase( Train,CL,type,k_min,k_max,interval );
+        }else if( select_feature == 1 ){
+            #Select feature only
+            print("Start feature selection ... ");
+            [m_selected_feature,d_err] =
+                getSelectedFeature( Train,CL,type,m_start_selected_feature,
+                    feature_max,k_value,interval );
+        }
     }
-}
-if( PRPath != " " ){
-    write( CL_matrix,PRPath,format=FMT );
+    if( feature_importance == 1){
+        if(  k_value >= n_records  ){
+            k_value = n_records - 1;
+            print( "k_value should be no greater than number of record, make k_value equal " +
+            "( number of record - 1 ) : " + k_value );
+        }
+        # CL = read( CLPath );
+        # CLType = read( CLTypePath );
+        type = as.integer( as.scalar( CLType[1,1] ) );
+        FeatureImportanceExportPath = ifdef( $FEATURE_IMPORTANCE_VALUE," " );
+        if(FeatureImportanceExportPath != " "){
+            [m_feature_importance,m_norm_feature_importance] =
+                getFeatureImportance(Train,CL,type,k_value);
+            #print( "feature importance is "  );
+            #tmp = matrixDisplay( m_feature_importance );
+            write ( m_feature_importance,FeatureImportanceExportPath,format=FMT );
+        }
+    }
+
+    # knn search
+    print("Start knn search ...")
+    # apply k selection result
+    if(select_k == 1){
+        k_value = s_selected_k
+    }
+    if(  k_value >= n_records ){
+        k_value = n_records - 1;
+        print( "k_value should be no greater than number of record, make k_value equal " +
+            "( number of record - 1 )" );
+    }
+    print( "k value is " + k_value );
+    # apply feature selection result
+    if( select_feature == 1 ){
+        if( n_features > sum( m_selected_feature ) ){
+            Train = removeEmpty( target = Train,margin="cols",select = m_selected_feature);
+            Test = removeEmpty( target = Test,margin="cols",select = m_selected_feature );
+        }
+    }
+
+    NNR_matrix = naiveKNNsearch(Train,Test,k_value)
+    if(NNRPath != " "){
+        write( NNR_matrix,NNRPath,format=FMT );
+    }
+
+    # main part for knn predicted
+    if( CLPath != " " ){
+        # CL = read ( CLPath );
+        if(  CLTypePath == " " ){
+            stop( "Set Y but Miss Y_T for label type" );
+        }
+        # CLType = read( CLTypePath );
+        i_cl_type = as.integer( as.scalar( CLType[1,1] ) );
+    }
+    CL_matrix = matrix( 0,nrow( Test ),1 );
+    if( CLPath != " " ){
+        parfor( i in 1:nrow( NNR_matrix ) ,check=0){
+            NNR_tmp_matrix = matrix( 0,k_value,1 );
+            for( j in 1:k_value ){
+                NNR_tmp_matrix[j,1] = CL[as.scalar( NNR_matrix[i,j] ),1] ;
+            }
+            t_cl_value = 0.0 #test data label value
+            if( i_cl_type == 2 ){
+                t_cl_value = as.scalar( rowIndexMax( t( table( NNR_tmp_matrix,1 ) ) ) )
+            }else{
+                if ( predict_con_tg == 0){
+                    t_cl_value = mean( NNR_tmp_matrix );
+                } else if(predict_con_tg == 1){
+                    t_cl_value = median( NNR_tmp_matrix );
+                }
+            }
+            CL_matrix[i,1] = t_cl_value;
+        }
+    }
+    if( PRPath != " " ){
+        write( CL_matrix,PRPath,format=FMT );
+    }
 }
 
 #naive knn search implement
